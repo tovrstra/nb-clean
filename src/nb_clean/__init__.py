@@ -3,6 +3,7 @@
 import contextlib
 import pathlib
 import subprocess
+from typing import Collection, Union
 
 import nbformat
 
@@ -77,7 +78,7 @@ def git_attributes_path() -> pathlib.Path:
 
 def add_git_filter(
     remove_empty_cells: bool = False,
-    preserve_cell_metadata: bool = False,
+    preserve_cell_metadata: Union[Collection[str], None] = None,
     preserve_cell_outputs: bool = False,
 ) -> None:
     """Add a filter to clean notebooks to the current Git repository.
@@ -86,8 +87,10 @@ def add_git_filter(
     ----------
     remove_empty_cells : bool, default False
         If True, remove empty cells.
-    preserve_cell_metadata : bool, default False
-        If True, preserve cell metadata.
+    preserve_cell_metadata : list of str or None, default None
+        If None, clean all cell metadata.
+        If [], preserve cell metadata.
+        If list of str, these are the cell metadata fields to preserve.
     preserve_cell_outputs : bool, default False
         If True, preserve cell outputs.
 
@@ -97,8 +100,13 @@ def add_git_filter(
     if remove_empty_cells:
         command.append("--remove-empty-cells")
 
-    if preserve_cell_metadata:
-        command.append("--preserve-cell-metadata")
+    if preserve_cell_metadata is not None:
+        if len(preserve_cell_metadata) > 0:
+            command.append(
+                f"--preserve-cell-metadata {' '.join(preserve_cell_metadata)}"
+            )
+        else:
+            command.append("--preserve-cell-metadata")
 
     if preserve_cell_outputs:
         command.append("--preserve-cell-outputs")
@@ -138,7 +146,7 @@ def remove_git_filter() -> None:
 def check_notebook(
     notebook: nbformat.NotebookNode,
     remove_empty_cells: bool = False,
-    preserve_cell_metadata: bool = False,
+    preserve_cell_metadata: Union[Collection[str], None] = None,
     preserve_cell_outputs: bool = False,
     filename: str = "notebook",
 ) -> bool:
@@ -150,8 +158,10 @@ def check_notebook(
         The notebook.
     remove_empty_cells : bool, default False
         If True, also check for the presence of empty cells.
-    preserve_cell_metadata : bool, default False
-        If True, don't check for cell metadata.
+    preserve_cell_metadata : list of str or None, default None
+        If None, check for all cell metadata.
+        If [], don't check for any cell metadata.
+        If list of str, these are the cell metadata fields to ignore.
     preserve_cell_outputs : bool, default False
         If True, don't check for cell outputs.
     filename : str, default "notebook"
@@ -172,9 +182,15 @@ def check_notebook(
             print(f"{prefix}: empty cell")
             is_clean = False
 
-        if not preserve_cell_metadata and cell["metadata"]:
-            print(f"{prefix}: metadata")
-            is_clean = False
+        if preserve_cell_metadata is None:
+            if cell["metadata"]:
+                print(f"{prefix}: metadata")
+                is_clean = False
+        elif len(preserve_cell_metadata) > 0:
+            for field in cell["metadata"]:
+                if field not in preserve_cell_metadata:
+                    print(f"{prefix}: metadata {field}")
+                    is_clean = False
 
         if cell["cell_type"] == "code":
             if cell["execution_count"]:
@@ -195,7 +211,7 @@ def check_notebook(
 def clean_notebook(
     notebook: nbformat.NotebookNode,
     remove_empty_cells: bool = False,
-    preserve_cell_metadata: bool = False,
+    preserve_cell_metadata: Union[Collection[str], None] = None,
     preserve_cell_outputs: bool = False,
 ) -> nbformat.NotebookNode:
     """Clean notebook of execution counts, metadata, and outputs.
@@ -206,8 +222,10 @@ def clean_notebook(
         The notebook.
     remove_empty_cells : bool, default False
         If True, remove empty cells.
-    preserve_cell_metadata : bool, default False
-        If True, preserve cell metadata.
+    preserve_cell_metadata : list of str or None, default None
+        If None, clean all cell metadata.
+        If [], preserve cell metadata.
+        If list of str, these are the cell metadata fields to preserve.
     preserve_cell_outputs : bool, default False
         If True, preserve cell outputs.
 
@@ -221,8 +239,14 @@ def clean_notebook(
         notebook.cells = [cell for cell in notebook.cells if cell["source"]]
 
     for cell in notebook.cells:
-        if not preserve_cell_metadata:
+        if preserve_cell_metadata is None:
             cell["metadata"] = {}
+        elif len(preserve_cell_metadata) > 0:
+            cell["metadata"] = {
+                field: value
+                for field, value in cell["metadata"].items()
+                if field in preserve_cell_metadata
+            }
         if cell["cell_type"] == "code":
             cell["execution_count"] = None
             if not preserve_cell_outputs:
